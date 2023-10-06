@@ -59,10 +59,12 @@ class GraphQLView(
         schema: BaseSchema,
         graphiql: bool = True,
         allow_queries_via_get: bool = True,
+        subscription_url: str = "",
     ):
         self.graphiql = graphiql
         self.allow_queries_via_get = allow_queries_via_get
         self.schema = schema
+        self.subscription_url = subscription_url
 
     def get_root_value(self, request: Request) -> Optional[RootValue]:
         return None
@@ -77,7 +79,7 @@ class GraphQLView(
             The GraphiQL html page as a string
         """
         return Response(
-            get_graphiql_html(),
+            get_graphiql_html(subscription_url=self.subscription_url),
             headers={"Content-Type": "text/html"},
         )
 

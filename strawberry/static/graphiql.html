@@ -118,7 +118,7 @@
 
       function httpUrlToWebSockeUrl(url) {
         const parsedURL = new URL(url);
-        const protocol = parsedURL.protocol === "http:" ? "ws:" : "wss:";
+        const protocol = parsedURL.protocol.includes('s') ? "wss:" : "ws:";
         parsedURL.protocol = protocol;
         parsedURL.hash = "";
         return parsedURL.toString();
@@ -133,7 +133,7 @@
 
       const subscriptionsEnabled = JSON.parse("{{ SUBSCRIPTION_ENABLED }}");
       const subscriptionUrl = subscriptionsEnabled
-        ? httpUrlToWebSockeUrl(fetchURL)
+        ? httpUrlToWebSockeUrl("{{ SUBSCRIPTION_URL }}" || fetchURL)
         : null;
 
       const fetcher = GraphiQL.createFetcher({
