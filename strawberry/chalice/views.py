@@ -77,7 +77,7 @@ class GraphQLView(
             The GraphiQL html page as a string
         """
         return Response(
-            get_graphiql_html(subscription_enabled=False),
+            get_graphiql_html(),
             headers={"Content-Type": "text/html"},
         )
 
