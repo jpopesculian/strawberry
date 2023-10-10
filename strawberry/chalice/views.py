@@ -204,10 +204,10 @@ class GraphQLView(
             )
             return
 
-        def _get_context():
+        async def _get_context():
             return self.get_ws_context(event=event)
 
-        def _get_root_value():
+        async def _get_root_value():
             return self.get_ws_root_value(event=event)
 
         await GraphQLTransportWSHandler(
