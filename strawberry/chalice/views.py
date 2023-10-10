@@ -169,7 +169,10 @@ class GraphQLView(
             default=None,
         )
         if protocol is None:
-            return Response(body="Unsupported protocol", status_code=400)
+            return Response(
+                body=f"Unsupported protocol: {protocols}; Supported: {self.protocols}",
+                status_code=400,
+            )
         self.session_storage.set_protocol(event.connection_id, protocol, 60 * 60 * 24)
         return Response(body=None, headers={_WS_PROTOCOL_HEADER: protocol})
 
