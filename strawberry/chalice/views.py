@@ -121,6 +121,12 @@ class GraphQLView(
     def get_context(self, request: Request, response: TemporalResponse) -> Context:
         return {"request": request, "response": response}  # type: ignore
 
+    def get_ws_context(self, event: WebsocketEvent) -> Context:
+        return {"event": event}  # type: ignore
+
+    def get_ws_root_value(self, event: WebsocketEvent) -> Optional[RootValue]:
+        return None
+
     def create_response(
         self, response_data: GraphQLHTTPResponse, sub_response: TemporalResponse
     ) -> Response:
@@ -199,12 +205,10 @@ class GraphQLView(
             return
 
         def _get_context():
-            return self.get_context(
-                request=Request(event.to_dict()), response=TemporalResponse()
-            )
+            return self.get_ws_context(event=event)
 
         def _get_root_value():
-            return self.get_root_value(request=Request(event.to_dict()))
+            return self.get_ws_root_value(event=event)
 
         await GraphQLTransportWSHandler(
             schema=self.schema,
