@@ -1,7 +1,8 @@
 from __future__ import annotations
-from datetime import timedelta
 
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union, cast, Sequence
+from datetime import timedelta
+import json
 
 from chalice.app import Request, Response, WebsocketEvent, WebsocketAPI
 from strawberry.http.exceptions import HTTPException
@@ -10,8 +11,9 @@ from strawberry.http.temporal_response import TemporalResponse
 from strawberry.http.types import HTTPMethod, QueryParams
 from strawberry.http.typevars import Context, RootValue
 from strawberry.utils.graphiql import get_graphiql_html
-from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL
+from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 from .graphql_transport_ws_handler import GraphQLTransportWSHandler
+from .session_storage import SessionStorage
 
 if TYPE_CHECKING:
     from strawberry.http import GraphQLHTTPResponse
@@ -58,7 +60,6 @@ class GraphQLView(
 ):
     allow_queries_via_get: bool = True
     request_adapter_class = ChaliceHTTPRequestAdapter
-    subscription_url: str = ""
 
     def __init__(
         self,
@@ -67,12 +68,19 @@ class GraphQLView(
         debug: bool = False,
         allow_queries_via_get: bool = True,
         subscription_url: str = "",
+        session_storage: Optional[SessionStorage] = None,
+        subscription_protocols: Sequence[str] = (
+            GRAPHQL_TRANSPORT_WS_PROTOCOL,
+            GRAPHQL_WS_PROTOCOL,
+        ),
     ):
         self.graphiql = graphiql
         self.allow_queries_via_get = allow_queries_via_get
         self.schema = schema
         self.debug = debug
         self.subscription_url = subscription_url
+        self.session_storage = session_storage
+        self.protocols = subscription_protocols
 
     def get_root_value(self, request: Request) -> Optional[RootValue]:
         return None
@@ -148,15 +156,45 @@ class GraphQLView(
             )
 
     def handle_ws_open(self, event: WebsocketEvent) -> Response:
-        protocol = event.to_dict().get("headers", {}).get(_WS_PROTOCOL_HEADER, None)
-        if protocol != GRAPHQL_TRANSPORT_WS_PROTOCOL:
-            return Response(body=None, status_code=400)
-        else:
-            return Response(body=None, headers={_WS_PROTOCOL_HEADER: protocol})
+        if self.session_storage is None:
+            raise ValueError("No session storage defined")
+
+        protocols = (
+            event.to_dict().get("headers", {}).get(_WS_PROTOCOL_HEADER, "").split(",")
+        )
+        intersection = set(protocols) & set(self.protocols)
+        protocol = min(
+            intersection,
+            key=lambda i: protocols.index(i),
+            default=None,
+        )
+        if protocol != GRAPHQL_TRANSPORT_WS_PROTOCOL or protocol != GRAPHQL_WS_PROTOCOL:
+            return Response(body="Unsupported protocol", status_code=400)
+        self.session_storage.set_protocol(event.connection_id, protocol, 60 * 60 * 24)
+        return Response(body=None, headers={_WS_PROTOCOL_HEADER: protocol})
 
     async def handle_ws_message(
-        self, event: WebsocketEvent, websocket_api: WebsocketAPI
+        self, websocket_api: WebsocketAPI, event: WebsocketEvent
     ):
+        if self.session_storage is None:
+            raise ValueError("No session storage defined")
+
+        protocol = self.session_storage.get_protocol(event.connection_id)
+
+        # TODO support GRAPHQL_WS_PROTOCOL
+        if protocol != GRAPHQL_TRANSPORT_WS_PROTOCOL:
+            websocket_api.send(
+                connection_id=event.connection_id,
+                message=json.dumps(
+                    {
+                        "type": "websocket.close",
+                        "code": 4406,
+                        "reason": "Subprotocol not acceptable",
+                    }
+                ),
+            )
+            return
+
         def _get_context():
             return self.get_context(
                 request=Request(event.to_dict()), response=TemporalResponse()
@@ -173,4 +211,5 @@ class GraphQLView(
             get_root_value=_get_root_value,
             websocket_api=websocket_api,
             event=event,
+            session_storage=self.session_storage,
         ).handle()

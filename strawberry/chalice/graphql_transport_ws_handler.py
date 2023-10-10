@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional, Dict
 import json
 
 
@@ -14,6 +14,7 @@ from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL
 from strawberry.subscriptions.protocols.graphql_transport_ws.handlers import (
     BaseGraphQLTransportWSHandler,
 )
+from .session_storage import SessionStorage
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -33,12 +34,14 @@ class GraphQLTransportWSHandler(BaseGraphQLTransportWSHandler):
         get_root_value: Callable,
         websocket_api: WebsocketAPI,
         event: WebsocketEvent,
+        session_storage: SessionStorage,
     ):
         super().__init__(schema, debug, connection_init_wait_timeout)
         self._get_context = get_context
         self._get_root_value = get_root_value
         self._websocket_api = websocket_api
         self._event = event
+        self._session_storage = session_storage
 
     async def get_context(self) -> Any:
         return await self._get_context()
@@ -55,6 +58,25 @@ class GraphQLTransportWSHandler(BaseGraphQLTransportWSHandler):
         await self.send_json(
             {"type": "websocket.close", "code": code, "reason": reason}
         )
+
+    @property
+    def connection_params(self) -> Optional[Dict[str, Any]]:
+        return self._session_storage.get_connection_params(self._event.connection_id)
+
+    @connection_params.setter
+    def connection_params(self, connection_params: Optional[Dict[str, Any]]):
+        if connection_params is not None:
+            self._session_storage.set_connection_params(
+                self._event.connection_id, connection_params, 60 * 60 * 24
+            )
+
+    @property
+    def connection_acknowledged(self) -> bool:
+        return self.connection_params is not None
+
+    @connection_acknowledged.setter
+    def connection_acknowledged(self, _: bool):
+        pass
 
     async def handle_request(self) -> None:
         try:
